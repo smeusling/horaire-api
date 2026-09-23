@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import { downloadExcelFile, listSheetNames, getRawRows } from "./excelSource.js";
 import { excelSerialToDate } from "./dateUtils.js";
 import { parseCoursSheet } from "./courseParser.js";
+import { extractVolees } from "./voleeParser.js";
 
 const fastify = Fastify();
 
@@ -51,6 +52,41 @@ fastify.get("/debug/parsed", async (request, reply) => {
       total: cours.length,
       premiers: cours.slice(0, 5),
     };
+  } catch (err) {
+    reply.code(500);
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+});
+
+fastify.get("/debug/mscips-raw", async (request, reply) => {
+  try {
+    const buffer = await downloadExcelFile(
+      "https://www.unil.ch/files/live/sites/fbm/files/06-espaces/sciences-infirmieres/20260918_horaire_automne_2026.xlsx"
+    );
+    const rows = getRawRows(buffer, "Horaire", Infinity);
+    const cours = parseCoursSheet(rows);
+    const values = new Set<string>();
+    for (const c of cours) {
+      if (c.volee && c.volee.toLowerCase().includes("mscips")) {
+        values.add(c.volee);
+      }
+    }
+    return Array.from(values).sort();
+  } catch (err) {
+    reply.code(500);
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+});
+
+fastify.get("/debug/volees", async (request, reply) => {
+  try {
+    const buffer = await downloadExcelFile(
+      "https://www.unil.ch/files/live/sites/fbm/files/06-espaces/sciences-infirmieres/20260918_horaire_automne_2026.xlsx"
+    );
+    const rows = getRawRows(buffer, "Horaire", Infinity);
+    const cours = parseCoursSheet(rows);
+    const volees = extractVolees(cours);
+    return volees;
   } catch (err) {
     reply.code(500);
     return { error: err instanceof Error ? err.message : String(err) };
