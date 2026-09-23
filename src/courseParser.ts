@@ -38,6 +38,21 @@ function getTextValue(row: any[], columnMap: Record<string, number>, columnName:
   return String(value).trim();
 }
 
+function isRowEmpty(row: any[] | undefined): boolean {
+  return !row || row.every((cell) => cell === null || cell === undefined || cell === "");
+}
+
+export function parseCoursSheet(rows: any[][]) {
+  const columnMap = buildColumnMap(rows[1] ?? []);
+  const cours = [];
+  for (let i = 2; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || isRowEmpty(row)) continue;
+    cours.push(parseCoursRow(row, columnMap));
+  }
+  return cours;
+}
+
 export function parseCoursRow(row: any[], columnMap: Record<string, number>) {
   const dateSerial = getValue(row, columnMap, "date");
   const heureDebutValue = getValue(row, columnMap, "heure début");

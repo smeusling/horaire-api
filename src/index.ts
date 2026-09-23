@@ -1,7 +1,7 @@
 import Fastify from "fastify";
 import { downloadExcelFile, listSheetNames, getRawRows } from "./excelSource.js";
 import { excelSerialToDate } from "./dateUtils.js";
-import { buildColumnMap, parseCoursRow } from "./courseParser.js";
+import { parseCoursSheet } from "./courseParser.js";
 
 const fastify = Fastify();
 
@@ -45,11 +45,12 @@ fastify.get("/debug/parsed", async (request, reply) => {
     const buffer = await downloadExcelFile(
       "https://www.unil.ch/files/live/sites/fbm/files/06-espaces/sciences-infirmieres/20260918_horaire_automne_2026.xlsx"
     );
-    const rows = getRawRows(buffer, "Horaire", 5);
-    const columnMap = buildColumnMap(rows[1]);
-    const dataRows = rows.slice(2, 5);
-    const parsed = dataRows.map((row) => parseCoursRow(row, columnMap));
-    return parsed;
+    const rows = getRawRows(buffer, "Horaire", Infinity);
+    const cours = parseCoursSheet(rows);
+    return {
+      total: cours.length,
+      premiers: cours.slice(0, 5),
+    };
   } catch (err) {
     reply.code(500);
     return { error: err instanceof Error ? err.message : String(err) };
