@@ -31,24 +31,98 @@ export function extractVolees(courses: CoursVolee[]): string[] {
   return Array.from(volees).sort((a, b) => a.localeCompare(b));
 }
 
-export function matchesVolee(rawVolee: string, selectedVolee: string): boolean {
+function findMatchingRawSegment(rawVolee: string, selectedVolee: string): string | undefined {
   const selectedLower = selectedVolee.toLowerCase();
-  const segments = rawVolee.split("/").map((part) => cleanVoleePart(part).toLowerCase());
+  const rawSegments = rawVolee.split("/");
 
-  for (const segment of segments) {
-    if (!segment) continue;
-    if (segment === selectedLower) {
-      return true;
+  for (const rawSegment of rawSegments) {
+    const cleaned = cleanVoleePart(rawSegment).toLowerCase();
+    if (!cleaned) continue;
+    if (cleaned === selectedLower) {
+      return rawSegment;
     }
-    const hasDigit = /\d/.test(segment);
-    if (!hasDigit && selectedLower.startsWith(segment)) {
-      const nextChar = selectedLower[segment.length];
+    const hasDigit = /\d/.test(cleaned);
+    if (!hasDigit && selectedLower.startsWith(cleaned)) {
+      const nextChar = selectedLower[cleaned.length];
       const isBoundary = nextChar === undefined || !/[a-z0-9]/.test(nextChar);
       if (isBoundary) {
-        return true;
+        return rawSegment;
       }
     }
   }
 
+  return undefined;
+}
+
+export function matchesVolee(rawVolee: string, selectedVolee: string): boolean {
+  return findMatchingRawSegment(rawVolee, selectedVolee) !== undefined;
+}
+
+export function matchesModalite(
+  rawVolee: string,
+  selectedVolee: string,
+  selectedModalites: string[]
+): boolean {
+  const rawSegment = findMatchingRawSegment(rawVolee, selectedVolee);
+  if (rawSegment === undefined) {
+    return false;
+  }
+
+  if (selectedModalites.includes("tempsPlein") && selectedModalites.includes("partiel")) {
+    return true;
+  }
+
+  const rawSegmentLower = rawSegment.toLowerCase();
+  if (rawSegmentLower.includes("tous")) {
+    return true;
+  }
+
+  if (selectedModalites.includes("tempsPlein") && rawSegmentLower.includes("plein")) {
+    return true;
+  }
+  if (selectedModalites.includes("partiel") && rawSegmentLower.includes("partiel")) {
+    return true;
+  }
+
   return false;
+}
+
+export function matchesOption(courseOption: string, selectedOption: string): boolean {
+  const cleanOption = courseOption.trim();
+  const lowerClean = cleanOption.toLowerCase();
+
+  if (!cleanOption || lowerClean.includes("tous") || lowerClean.includes("toutes orientations")) {
+    return true;
+  }
+
+  const selectedLower = selectedOption.toLowerCase();
+  const parts = cleanOption.split(/[/,]/).map((part) => part.trim());
+
+  return parts.some((part) => {
+    if (!part) return false;
+    const lowerPart = part.toLowerCase();
+    if (lowerPart === selectedLower || selectedLower.includes(lowerPart) || lowerPart.includes(selectedLower)) {
+      return true;
+    }
+    if (selectedLower.includes("primaire") && (lowerPart === "primaires" || lowerPart.includes("primaire"))) {
+      return true;
+    }
+    if (selectedLower.includes("adulte") && (lowerPart === "adultes" || lowerPart.includes("adulte"))) {
+      return true;
+    }
+    if (
+      selectedLower.includes("enfant") &&
+      (lowerPart === "pédiatriques" ||
+        lowerPart === "pediatriques" ||
+        lowerPart === "pédiatrie" ||
+        lowerPart === "pediatrie" ||
+        lowerPart.includes("enfant"))
+    ) {
+      return true;
+    }
+    if (selectedLower.includes("mentale") && lowerPart.includes("mentale")) {
+      return true;
+    }
+    return false;
+  });
 }

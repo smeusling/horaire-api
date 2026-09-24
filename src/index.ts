@@ -2,7 +2,7 @@ import Fastify from "fastify";
 import { downloadExcelFile, listSheetNames, getRawRows } from "./excelSource.js";
 import { excelSerialToDate } from "./dateUtils.js";
 import { parseCoursSheet } from "./courseParser.js";
-import { extractVolees, matchesVolee } from "./voleeParser.js";
+import { extractVolees, matchesVolee, matchesModalite, matchesOption } from "./voleeParser.js";
 
 const fastify = Fastify();
 
@@ -94,7 +94,7 @@ fastify.get("/debug/volees", async (request, reply) => {
 });
 
 fastify.get("/debug/match-test", async () => {
-  const cases: { rawVolee: string; selectedVolee: string }[] = [
+  const voleeCases: { rawVolee: string; selectedVolee: string }[] = [
     { rawVolee: "MScSI Volée 2026 Tous / MScIPS 2026 Tous", selectedVolee: "IPS 2026" },
     { rawVolee: "MScSI Volée 2026 Tous / MScIPS 2026 Tous", selectedVolee: "MScIPS 2026" },
     { rawVolee: "Etudiants Tous MScSI/MScIPS", selectedVolee: "MScIPS 2026" },
@@ -103,11 +103,39 @@ fastify.get("/debug/match-test", async () => {
     { rawVolee: "IPS 2025 Temps partiel 8 semestres", selectedVolee: "IPS 2025" },
   ];
 
-  return cases.map(({ rawVolee, selectedVolee }) => ({
-    rawVolee,
-    selectedVolee,
-    result: matchesVolee(rawVolee, selectedVolee),
-  }));
+  const modaliteCases: { rawVolee: string; selectedVolee: string; selectedModalites: string[] }[] = [
+    { rawVolee: "IPS 2025 Temps partiel 8 semestres", selectedVolee: "IPS 2025", selectedModalites: ["partiel"] },
+    { rawVolee: "IPS 2025 Temps partiel 8 semestres", selectedVolee: "IPS 2025", selectedModalites: ["tempsPlein"] },
+    { rawVolee: "IPS 2026 Tous", selectedVolee: "IPS 2026", selectedModalites: ["tempsPlein"] },
+    { rawVolee: "IPS 2026 Tous", selectedVolee: "IPS 2026", selectedModalites: ["partiel"] },
+  ];
+
+  const optionCases: { courseOption: string; selectedOption: string }[] = [
+    { courseOption: "Tous", selectedOption: "Soins primaires" },
+    { courseOption: "", selectedOption: "Soins primaires" },
+    { courseOption: "Soins primaires", selectedOption: "Soins primaires" },
+    { courseOption: "primaires/adultes", selectedOption: "Soins aux enfants" },
+    { courseOption: "primaires/adultes", selectedOption: "Soins primaires" },
+  ];
+
+  return {
+    matchesVolee: voleeCases.map(({ rawVolee, selectedVolee }) => ({
+      rawVolee,
+      selectedVolee,
+      result: matchesVolee(rawVolee, selectedVolee),
+    })),
+    matchesModalite: modaliteCases.map(({ rawVolee, selectedVolee, selectedModalites }) => ({
+      rawVolee,
+      selectedVolee,
+      selectedModalites,
+      result: matchesModalite(rawVolee, selectedVolee, selectedModalites),
+    })),
+    matchesOption: optionCases.map(({ courseOption, selectedOption }) => ({
+      courseOption,
+      selectedOption,
+      result: matchesOption(courseOption, selectedOption),
+    })),
+  };
 });
 
 const start = async () => {
