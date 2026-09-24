@@ -8,16 +8,17 @@ function formatDateYYYYMMDD(date: Date): string {
 export function generateCoursAutomneUrls(daysBack: number): string[] {
   const urls: string[] = [];
   const today = new Date();
+  const currentYear = new Date().getFullYear();
 
   for (let i = 0; i <= daysBack; i++) {
     const date = new Date(today);
     date.setDate(today.getDate() - i);
     const formatted = formatDateYYYYMMDD(date);
     urls.push(
-      `https://www.unil.ch/files/live/sites/fbm/files/06-espaces/sciences-infirmieres/${formatted}_horaire_automne_2026.xlsx`
+      `https://www.unil.ch/files/live/sites/fbm/files/06-espaces/sciences-infirmieres/${formatted}_horaire_automne_${currentYear}.xlsx`
     );
     urls.push(
-      `https://www.unil.ch/files/live/sites/fbm/files/06-espaces/sciences-infirmieres/${formatted}_Horaire_Automne_2026.xlsx`
+      `https://www.unil.ch/files/live/sites/fbm/files/06-espaces/sciences-infirmieres/${formatted}_Horaire_Automne_${currentYear}.xlsx`
     );
   }
 
