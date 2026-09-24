@@ -23,3 +23,22 @@ export function generateCoursAutomneUrls(daysBack: number): string[] {
 
   return urls;
 }
+
+export async function findMostRecentCoursAutomneUrl(): Promise<{ url: string; lastModified: Date } | null> {
+  const candidateUrls = generateCoursAutomneUrls(30);
+  let best: { url: string; lastModified: Date } | null = null;
+
+  for (const url of candidateUrls) {
+    const response = await fetch(url, { method: "HEAD" });
+    const lastModifiedHeader = response.headers.get("last-modified");
+
+    if (response.ok && lastModifiedHeader) {
+      const lastModified = new Date(lastModifiedHeader);
+      if (!best || lastModified > best.lastModified) {
+        best = { url, lastModified };
+      }
+    }
+  }
+
+  return best;
+}
