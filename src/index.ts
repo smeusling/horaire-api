@@ -2,7 +2,7 @@ import Fastify from "fastify";
 import { downloadExcelFile, listSheetNames, getRawRows } from "./excelSource.js";
 import { excelSerialToDate } from "./dateUtils.js";
 import { parseCoursSheet } from "./courseParser.js";
-import { extractVolees } from "./voleeParser.js";
+import { extractVolees, matchesVolee } from "./voleeParser.js";
 
 const fastify = Fastify();
 
@@ -91,6 +91,23 @@ fastify.get("/debug/volees", async (request, reply) => {
     reply.code(500);
     return { error: err instanceof Error ? err.message : String(err) };
   }
+});
+
+fastify.get("/debug/match-test", async () => {
+  const cases: { rawVolee: string; selectedVolee: string }[] = [
+    { rawVolee: "MScSI Volée 2026 Tous / MScIPS 2026 Tous", selectedVolee: "IPS 2026" },
+    { rawVolee: "MScSI Volée 2026 Tous / MScIPS 2026 Tous", selectedVolee: "MScIPS 2026" },
+    { rawVolee: "Etudiants Tous MScSI/MScIPS", selectedVolee: "MScIPS 2026" },
+    { rawVolee: "Etudiants Tous MScSI/MScIPS", selectedVolee: "MScIPS" },
+    { rawVolee: "IPS 2026 Tous", selectedVolee: "IPS 2026" },
+    { rawVolee: "IPS 2025 Temps partiel 8 semestres", selectedVolee: "IPS 2025" },
+  ];
+
+  return cases.map(({ rawVolee, selectedVolee }) => ({
+    rawVolee,
+    selectedVolee,
+    result: matchesVolee(rawVolee, selectedVolee),
+  }));
 });
 
 const start = async () => {
