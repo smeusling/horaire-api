@@ -3,6 +3,7 @@ import { downloadExcelFile, listSheetNames, getRawRows } from "./excelSource.js"
 import { excelSerialToDate } from "./dateUtils.js";
 import { parseCoursSheet } from "./courseParser.js";
 import { extractVolees, matchesVolee, matchesModalite, matchesOption, filterCourses } from "./voleeParser.js";
+import { generateCoursAutomneUrls } from "./fileFinder.js";
 
 const fastify = Fastify();
 
@@ -177,6 +178,10 @@ fastify.get("/api/schedule", async (request, reply) => {
     reply.code(500);
     return { error: err instanceof Error ? err.message : String(err) };
   }
+});
+
+fastify.get("/debug/candidate-urls", async () => {
+  return generateCoursAutomneUrls(30);
 });
 
 const start = async () => {
