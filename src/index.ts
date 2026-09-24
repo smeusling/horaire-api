@@ -3,7 +3,7 @@ import { downloadExcelFile, listSheetNames, getRawRows } from "./excelSource.js"
 import { excelSerialToDate } from "./dateUtils.js";
 import { parseCoursSheet } from "./courseParser.js";
 import { extractVolees, matchesVolee, matchesModalite, matchesOption, filterCourses } from "./voleeParser.js";
-import { generateCoursAutomneUrls, findMostRecentCoursAutomneUrl } from "./fileFinder.js";
+import { generateCoursAutomneUrls, findMostRecentCoursAutomneUrl, getCoursAutomneUrl } from "./fileFinder.js";
 
 const fastify = Fastify();
 
@@ -141,9 +141,8 @@ fastify.get("/debug/match-test", async () => {
 
 fastify.get("/api/volees", async (request, reply) => {
   try {
-    const buffer = await downloadExcelFile(
-      "https://www.unil.ch/files/live/sites/fbm/files/06-espaces/sciences-infirmieres/20260918_horaire_automne_2026.xlsx"
-    );
+    const url = await getCoursAutomneUrl();
+    const buffer = await downloadExcelFile(url);
     const rows = getRawRows(buffer, "Horaire", Infinity);
     const cours = parseCoursSheet(rows);
     return extractVolees(cours);
@@ -166,9 +165,8 @@ fastify.get("/api/schedule", async (request, reply) => {
   }
 
   try {
-    const buffer = await downloadExcelFile(
-      "https://www.unil.ch/files/live/sites/fbm/files/06-espaces/sciences-infirmieres/20260918_horaire_automne_2026.xlsx"
-    );
+    const url = await getCoursAutomneUrl();
+    const buffer = await downloadExcelFile(url);
     const rows = getRawRows(buffer, "Horaire", Infinity);
     const cours = parseCoursSheet(rows);
     const selectedModalites = query.modalite.split(",").map((m) => m.trim());

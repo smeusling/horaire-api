@@ -42,3 +42,30 @@ export async function findMostRecentCoursAutomneUrl(): Promise<{ url: string; la
 
   return best;
 }
+
+const CACHE_DURATION_MS = 6 * 60 * 60 * 1000;
+
+let cachedResult: { url: string; lastModified: Date } | null = null;
+let cachedAt: Date | null = null;
+
+export async function getCoursAutomneUrl(): Promise<string> {
+  const now = Date.now();
+
+  if (cachedResult && cachedAt && now - cachedAt.getTime() < CACHE_DURATION_MS) {
+    return cachedResult.url;
+  }
+
+  const result = await findMostRecentCoursAutomneUrl();
+
+  if (result) {
+    cachedResult = result;
+    cachedAt = new Date();
+    return result.url;
+  }
+
+  if (cachedResult) {
+    return cachedResult.url;
+  }
+
+  throw new Error("Impossible de trouver l'URL du fichier des cours (aucune réponse valide et aucun cache disponible).");
+}
