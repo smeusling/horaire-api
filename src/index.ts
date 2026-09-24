@@ -2,7 +2,7 @@ import Fastify from "fastify";
 import { downloadExcelFile, listSheetNames, getRawRows } from "./excelSource.js";
 import { excelSerialToDate } from "./dateUtils.js";
 import { parseCoursSheet } from "./courseParser.js";
-import { extractVolees, matchesVolee, matchesModalite, matchesOption } from "./voleeParser.js";
+import { extractVolees, matchesVolee, matchesModalite, matchesOption, filterCourses } from "./voleeParser.js";
 
 const fastify = Fastify();
 
@@ -136,6 +136,47 @@ fastify.get("/debug/match-test", async () => {
       result: matchesOption(courseOption, selectedOption),
     })),
   };
+});
+
+fastify.get("/api/volees", async (request, reply) => {
+  try {
+    const buffer = await downloadExcelFile(
+      "https://www.unil.ch/files/live/sites/fbm/files/06-espaces/sciences-infirmieres/20260918_horaire_automne_2026.xlsx"
+    );
+    const rows = getRawRows(buffer, "Horaire", Infinity);
+    const cours = parseCoursSheet(rows);
+    return extractVolees(cours);
+  } catch (err) {
+    reply.code(500);
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+});
+
+fastify.get("/api/schedule", async (request, reply) => {
+  const query = request.query as {
+    volee?: string;
+    modalite?: string;
+    option?: string;
+  };
+
+  if (!query.volee || !query.modalite) {
+    reply.code(400);
+    return { error: "Les paramètres 'volee' et 'modalite' sont requis." };
+  }
+
+  try {
+    const buffer = await downloadExcelFile(
+      "https://www.unil.ch/files/live/sites/fbm/files/06-espaces/sciences-infirmieres/20260918_horaire_automne_2026.xlsx"
+    );
+    const rows = getRawRows(buffer, "Horaire", Infinity);
+    const cours = parseCoursSheet(rows);
+    const selectedModalites = query.modalite.split(",").map((m) => m.trim());
+    const result = filterCourses(cours, query.volee, selectedModalites, query.option);
+    return result;
+  } catch (err) {
+    reply.code(500);
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
 });
 
 const start = async () => {

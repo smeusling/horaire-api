@@ -126,3 +126,33 @@ export function matchesOption(courseOption: string, selectedOption: string): boo
     return false;
   });
 }
+
+interface FilterableCourse {
+  volee: string;
+  option: string;
+  date?: string;
+  heureDebut?: string;
+}
+
+export function filterCourses<T extends FilterableCourse>(
+  courses: T[],
+  selectedVolee: string,
+  selectedModalites: string[],
+  selectedOption?: string
+): T[] {
+  const filtered = courses.filter((course) => {
+    if (!matchesVolee(course.volee, selectedVolee)) return false;
+    if (!matchesModalite(course.volee, selectedVolee, selectedModalites)) return false;
+    if (selectedOption && !matchesOption(course.option, selectedOption)) return false;
+    return true;
+  });
+
+  return filtered.sort((a, b) => {
+    const dateA = a.date ?? "";
+    const dateB = b.date ?? "";
+    if (dateA !== dateB) return dateA.localeCompare(dateB);
+    const heureA = a.heureDebut ?? "";
+    const heureB = b.heureDebut ?? "";
+    return heureA.localeCompare(heureB);
+  });
+}
