@@ -7,6 +7,12 @@ import { generateCoursAutomneUrls, findMostRecentCoursAutomneUrl, getCoursAutomn
 
 const fastify = Fastify();
 
+fastify.addHook("onRequest", async (request, reply) => {
+  if (request.url.startsWith("/debug") && process.env.NODE_ENV === "production") {
+    reply.code(404).send({ error: "Not Found" });
+  }
+});
+
 fastify.get("/health", async () => {
   return { status: "ok" };
 });
