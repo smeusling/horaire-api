@@ -3,7 +3,7 @@ import { downloadExcelFile, listSheetNames, getRawRows } from "./excelSource.js"
 import { excelSerialToDate } from "./dateUtils.js";
 import { parseCoursSheet } from "./courseParser.js";
 import { extractVolees, matchesVolee, matchesModalite, matchesOption, filterCourses } from "./voleeParser.js";
-import { generateCoursAutomneUrls, findMostRecentCoursAutomneUrl, getCoursAutomneUrl } from "./fileFinder.js";
+import { generateFileUrls, findMostRecentFileUrl, getFileUrl } from "./fileFinder.js";
 
 const fastify = Fastify();
 
@@ -147,7 +147,7 @@ fastify.get("/debug/match-test", async () => {
 
 fastify.get("/api/volees", async (request, reply) => {
   try {
-    const url = await getCoursAutomneUrl();
+    const url = await getFileUrl("coursAutomne");
     const buffer = await downloadExcelFile(url);
     const rows = getRawRows(buffer, "Horaire", Infinity);
     const cours = parseCoursSheet(rows);
@@ -171,7 +171,7 @@ fastify.get("/api/schedule", async (request, reply) => {
   }
 
   try {
-    const url = await getCoursAutomneUrl();
+    const url = await getFileUrl("coursAutomne");
     const buffer = await downloadExcelFile(url);
     const rows = getRawRows(buffer, "Horaire", Infinity);
     const cours = parseCoursSheet(rows);
@@ -185,12 +185,12 @@ fastify.get("/api/schedule", async (request, reply) => {
 });
 
 fastify.get("/debug/candidate-urls", async () => {
-  return generateCoursAutomneUrls(30);
+  return generateFileUrls("coursAutomne", 30);
 });
 
 fastify.get("/debug/find-latest", async (request, reply) => {
   try {
-    const result = await findMostRecentCoursAutomneUrl();
+    const result = await findMostRecentFileUrl("coursAutomne");
     if (!result) {
       reply.code(404);
       return { error: "Aucun fichier trouvé parmi les URLs candidates." };
