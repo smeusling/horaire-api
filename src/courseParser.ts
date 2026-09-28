@@ -38,6 +38,22 @@ function getTextValue(row: any[], columnMap: Record<string, number>, columnName:
   return String(value).trim();
 }
 
+function getValueByNames(row: any[], columnMap: Record<string, number>, columnNames: string[]): any {
+  for (const columnName of columnNames) {
+    const index = columnMap[columnName];
+    if (index !== undefined) {
+      return row[index];
+    }
+  }
+  return undefined;
+}
+
+function getTextValueByNames(row: any[], columnMap: Record<string, number>, columnNames: string[]): string {
+  const value = getValueByNames(row, columnMap, columnNames);
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
+}
+
 function isRowEmpty(row: any[] | undefined): boolean {
   return !row || row.every((cell) => cell === null || cell === undefined || cell === "");
 }
@@ -62,7 +78,7 @@ export function parseCoursRow(row: any[], columnMap: Record<string, number>) {
     date: typeof dateSerial === "number" ? formatDateOnly(excelSerialToDate(dateSerial)) : undefined,
     heureDebut: typeof heureDebutValue === "number" ? formatHeure(heureDebutValue) : undefined,
     heureFin: typeof heureFinValue === "number" ? formatHeure(heureFinValue) : undefined,
-    cours: getTextValue(row, columnMap, "cours"),
+    cours: getTextValueByNames(row, columnMap, ["cours", "enseignement"]),
     contenuCours: getTextValue(row, columnMap, "contenu du cours"),
     volee: getTextValue(row, columnMap, "volée"),
     option: getTextValue(row, columnMap, "option"),

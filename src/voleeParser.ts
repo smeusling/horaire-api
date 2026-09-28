@@ -130,8 +130,8 @@ export function matchesOption(courseOption: string, selectedOption: string): boo
 interface FilterableCourse {
   volee: string;
   option: string;
-  date?: string;
-  heureDebut?: string;
+  date?: string | undefined;
+  heureDebut?: string | undefined;
 }
 
 export function filterCourses<T extends FilterableCourse>(

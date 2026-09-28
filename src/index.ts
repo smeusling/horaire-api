@@ -3,7 +3,10 @@ import { downloadExcelFile, listSheetNames, getRawRows } from "./excelSource.js"
 import { excelSerialToDate } from "./dateUtils.js";
 import { parseCoursSheet } from "./courseParser.js";
 import { extractVolees, matchesVolee, matchesModalite, matchesOption, filterCourses } from "./voleeParser.js";
-import { generateFileUrls, findMostRecentFileUrl, getFileUrl } from "./fileFinder.js";
+import { generateFileUrls, findMostRecentFileUrl, getFileUrl, FileNotFoundError } from "./fileFinder.js";
+import { SEMESTRES, semestreToFileType } from "./semestre.js";
+import type { Semestre } from "./semestre.js";
+import type { FastifyError, FastifyReply } from "fastify";
 
 const fastify = Fastify();
 
@@ -11,6 +14,14 @@ fastify.addHook("onRequest", async (request, reply) => {
   if (request.url.startsWith("/debug") && process.env.NODE_ENV === "production") {
     reply.code(404).send({ error: "Not Found" });
   }
+});
+
+fastify.setErrorHandler((err: FastifyError, request, reply) => {
+  if (err.validation) {
+    reply.code(400).send({ error: err.message });
+    return;
+  }
+  reply.code(err.statusCode ?? 500).send({ error: err.message });
 });
 
 fastify.get("/health", async () => {
@@ -145,44 +156,81 @@ fastify.get("/debug/match-test", async () => {
   };
 });
 
-fastify.get("/api/volees", async (request, reply) => {
-  try {
-    const url = await getFileUrl("coursAutomne");
-    const buffer = await downloadExcelFile(url);
-    const rows = getRawRows(buffer, "Horaire", Infinity);
-    const cours = parseCoursSheet(rows);
-    return extractVolees(cours);
-  } catch (err) {
-    reply.code(500);
-    return { error: err instanceof Error ? err.message : String(err) };
-  }
-});
+const voleesQuerystringSchema = {
+  type: "object",
+  required: ["semestre"],
+  properties: {
+    semestre: { type: "string", enum: SEMESTRES },
+  },
+};
 
-fastify.get("/api/schedule", async (request, reply) => {
-  const query = request.query as {
-    volee?: string;
-    modalite?: string;
+async function loadCourses(semestre: Semestre) {
+  const fileType = semestreToFileType(semestre);
+  const url = await getFileUrl(fileType);
+  const buffer = await downloadExcelFile(url);
+  const rows = getRawRows(buffer, "Horaire", Infinity);
+  return parseCoursSheet(rows);
+}
+
+function sendScheduleError(err: unknown, semestre: Semestre, reply: FastifyReply): void {
+  if (err instanceof FileNotFoundError) {
+    reply.code(404).send({
+      error: "Horaire non disponible",
+      message: `Aucun horaire trouvé pour le semestre de ${semestre} ${err.year}. Il n'a peut-être pas encore été publié.`,
+    });
+    return;
+  }
+  reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
+}
+
+fastify.get<{ Querystring: { semestre: Semestre } }>(
+  "/api/volees",
+  { schema: { querystring: voleesQuerystringSchema } },
+  async (request, reply) => {
+    const semestre = request.query.semestre;
+    try {
+      const cours = await loadCourses(semestre);
+      return extractVolees(cours);
+    } catch (err) {
+      sendScheduleError(err, semestre, reply);
+    }
+  }
+);
+
+const scheduleQuerystringSchema = {
+  type: "object",
+  required: ["volee", "modalite", "semestre"],
+  properties: {
+    volee: { type: "string", minLength: 1 },
+    modalite: { type: "string", minLength: 1 },
+    option: { type: "string" },
+    semestre: { type: "string", enum: SEMESTRES },
+  },
+};
+
+fastify.get<{
+  Querystring: {
+    volee: string;
+    modalite: string;
     option?: string;
+    semestre: Semestre;
   };
+}>(
+  "/api/schedule",
+  { schema: { querystring: scheduleQuerystringSchema } },
+  async (request, reply) => {
+    const { volee, modalite, option, semestre } = request.query;
 
-  if (!query.volee || !query.modalite) {
-    reply.code(400);
-    return { error: "Les paramètres 'volee' et 'modalite' sont requis." };
+    try {
+      const cours = await loadCourses(semestre);
+      const selectedModalites = modalite.split(",").map((m) => m.trim());
+      const result = filterCourses(cours, volee, selectedModalites, option);
+      return result;
+    } catch (err) {
+      sendScheduleError(err, semestre, reply);
+    }
   }
-
-  try {
-    const url = await getFileUrl("coursAutomne");
-    const buffer = await downloadExcelFile(url);
-    const rows = getRawRows(buffer, "Horaire", Infinity);
-    const cours = parseCoursSheet(rows);
-    const selectedModalites = query.modalite.split(",").map((m) => m.trim());
-    const result = filterCourses(cours, query.volee, selectedModalites, query.option);
-    return result;
-  } catch (err) {
-    reply.code(500);
-    return { error: err instanceof Error ? err.message : String(err) };
-  }
-});
+);
 
 fastify.get("/debug/candidate-urls", async () => {
   return generateFileUrls("coursAutomne", 30);

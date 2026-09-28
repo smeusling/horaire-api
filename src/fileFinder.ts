@@ -5,7 +5,7 @@ function formatDateYYYYMMDD(date: Date): string {
   return `${year}${month}${day}`;
 }
 
-type FileType = "coursAutomne" | "coursPrintemps" | "examensAutomne" | "examensPrintemps";
+export type FileType = "coursAutomne" | "coursPrintemps" | "examensAutomne" | "examensPrintemps";
 
 interface FileTypeConfig {
   computeYear(today: Date): number;
@@ -70,20 +70,58 @@ export async function findMostRecentFileUrl(
 ): Promise<{ url: string; lastModified: Date } | null> {
   const candidateUrls = generateFileUrls(fileType, 30);
   let best: { url: string; lastModified: Date } | null = null;
+  let failedCount = 0;
 
   for (const url of candidateUrls) {
-    const response = await fetch(url, { method: "HEAD" });
-    const lastModifiedHeader = response.headers.get("last-modified");
+    let response: Response;
+    try {
+      response = await fetch(url, { method: "HEAD" });
+    } catch {
+      failedCount++;
+      continue;
+    }
 
+    const lastModifiedHeader = response.headers.get("last-modified");
     if (response.ok && lastModifiedHeader) {
       const lastModified = new Date(lastModifiedHeader);
       if (!best || lastModified > best.lastModified) {
         best = { url, lastModified };
       }
+      continue;
     }
+
+    if (response.status === 404) {
+      continue;
+    }
+
+    failedCount++;
   }
 
-  return best;
+  if (best) {
+    return best;
+  }
+
+  if (failedCount === 0) {
+    return null;
+  }
+
+  throw new Error(
+    `Impossible de vérifier la disponibilité du fichier (${fileType}) : ${failedCount}/${candidateUrls.length} requêtes ont échoué (panne réseau ou erreur serveur).`
+  );
+}
+
+export function computeFileYear(fileType: FileType, today: Date = new Date()): number {
+  return FILE_TYPE_CONFIGS[fileType].computeYear(today);
+}
+
+export class FileNotFoundError extends Error {
+  constructor(
+    public readonly fileType: FileType,
+    public readonly year: number
+  ) {
+    super(`Aucun fichier trouvé pour le type "${fileType}" (année ${year}).`);
+    this.name = "FileNotFoundError";
+  }
 }
 
 const CACHE_DURATION_MS = 6 * 60 * 60 * 1000;
@@ -105,7 +143,15 @@ export async function getFileUrl(fileType: FileType): Promise<string> {
     return entry.result.url;
   }
 
-  const result = await findMostRecentFileUrl(fileType);
+  let result: { url: string; lastModified: Date } | null;
+  try {
+    result = await findMostRecentFileUrl(fileType);
+  } catch (err) {
+    if (entry.result) {
+      return entry.result.url;
+    }
+    throw err;
+  }
 
   if (result) {
     entry.result = result;
@@ -117,7 +163,5 @@ export async function getFileUrl(fileType: FileType): Promise<string> {
     return entry.result.url;
   }
 
-  throw new Error(
-    `Impossible de trouver l'URL du fichier (${fileType}) : aucune réponse valide et aucun cache disponible.`
-  );
+  throw new FileNotFoundError(fileType, computeFileYear(fileType));
 }
