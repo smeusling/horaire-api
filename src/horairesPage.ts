@@ -3,12 +3,14 @@ import type { FileType } from "./fileFinder.js";
 export const HORAIRES_PAGE_URL =
   "https://www.unil.ch/fbm/fr/home/ressources/espaces/espace-interne-iufrs.html";
 
+export const USER_AGENT = "HorairesCoursAPI/1.0 (https://github.com/smeusling/horaire-api)";
+
 const FETCH_TIMEOUT_MS = 10_000;
 
 export async function fetchHorairesPage(): Promise<string> {
   const response = await fetch(HORAIRES_PAGE_URL, {
     headers: {
-      "User-Agent": "HorairesCoursAPI/1.0 (https://github.com/smeusling/horaire-api)",
+      "User-Agent": USER_AGENT,
     },
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });

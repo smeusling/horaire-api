@@ -1,117 +1,22 @@
-function formatDateYYYYMMDD(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}${month}${day}`;
-}
+import { fetchHorairesPage, extractXlsxLinks, findLinksForFileType, HORAIRES_PAGE_URL, USER_AGENT } from "./horairesPage.js";
 
 export type FileType = "coursAutomne" | "coursPrintemps" | "examensAutomne" | "examensPrintemps";
 
-interface FileTypeConfig {
-  computeYear(today: Date): number;
-  buildFileNames(year: number): [string, string];
-}
-
-const FILE_TYPE_CONFIGS: Record<FileType, FileTypeConfig> = {
-  coursAutomne: {
-    computeYear: (today) => today.getFullYear(),
-    buildFileNames: (year) => [`horaire_automne_${year}`, `Horaire_Automne_${year}`],
+const FILE_TYPE_YEAR_RULES: Record<FileType, (today: Date) => number> = {
+  coursAutomne: (today) => today.getFullYear(),
+  coursPrintemps: (today) => {
+    const month = today.getMonth() + 1;
+    return month >= 9 ? today.getFullYear() + 1 : today.getFullYear();
   },
-  coursPrintemps: {
-    computeYear: (today) => {
-      const month = today.getMonth() + 1;
-      return month >= 9 ? today.getFullYear() + 1 : today.getFullYear();
-    },
-    buildFileNames: (year) => [`horaire_printemps_${year}`, `Horaire_Printemps_${year}`],
+  examensAutomne: (today) => {
+    const month = today.getMonth() + 1;
+    return month <= 2 ? today.getFullYear() - 1 : today.getFullYear();
   },
-  examensAutomne: {
-    computeYear: (today) => {
-      const month = today.getMonth() + 1;
-      return month <= 2 ? today.getFullYear() - 1 : today.getFullYear();
-    },
-    buildFileNames: (year) => {
-      const yy = String(year).slice(-2);
-      return [`horaire_examens_a${yy}`, `Horaire_Examens_A${yy}`];
-    },
-  },
-  examensPrintemps: {
-    computeYear: (today) => today.getFullYear(),
-    buildFileNames: (year) => {
-      const yy = String(year).slice(-2);
-      return [`horaire_examens_p${yy}`, `Horaire_Examens_P${yy}`];
-    },
-  },
+  examensPrintemps: (today) => today.getFullYear(),
 };
 
-export function generateFileUrls(fileType: FileType, daysBack: number): string[] {
-  const urls: string[] = [];
-  const today = new Date();
-  const config = FILE_TYPE_CONFIGS[fileType];
-  const year = config.computeYear(today);
-  const [lowerName, upperName] = config.buildFileNames(year);
-
-  for (let i = 0; i <= daysBack; i++) {
-    const date = new Date(today);
-    date.setDate(today.getDate() - i);
-    const formatted = formatDateYYYYMMDD(date);
-    urls.push(
-      `https://www.unil.ch/files/live/sites/fbm/files/06-espaces/sciences-infirmieres/${formatted}_${lowerName}.xlsx`
-    );
-    urls.push(
-      `https://www.unil.ch/files/live/sites/fbm/files/06-espaces/sciences-infirmieres/${formatted}_${upperName}.xlsx`
-    );
-  }
-
-  return urls;
-}
-
-export async function findMostRecentFileUrl(
-  fileType: FileType
-): Promise<{ url: string; lastModified: Date } | null> {
-  const candidateUrls = generateFileUrls(fileType, 30);
-  let best: { url: string; lastModified: Date } | null = null;
-  let failedCount = 0;
-
-  for (const url of candidateUrls) {
-    let response: Response;
-    try {
-      response = await fetch(url, { method: "HEAD" });
-    } catch {
-      failedCount++;
-      continue;
-    }
-
-    const lastModifiedHeader = response.headers.get("last-modified");
-    if (response.ok && lastModifiedHeader) {
-      const lastModified = new Date(lastModifiedHeader);
-      if (!best || lastModified > best.lastModified) {
-        best = { url, lastModified };
-      }
-      continue;
-    }
-
-    if (response.status === 404) {
-      continue;
-    }
-
-    failedCount++;
-  }
-
-  if (best) {
-    return best;
-  }
-
-  if (failedCount === 0) {
-    return null;
-  }
-
-  throw new Error(
-    `Impossible de vérifier la disponibilité du fichier (${fileType}) : ${failedCount}/${candidateUrls.length} requêtes ont échoué (panne réseau ou erreur serveur).`
-  );
-}
-
 export function computeFileYear(fileType: FileType, today: Date = new Date()): number {
-  return FILE_TYPE_CONFIGS[fileType].computeYear(today);
+  return FILE_TYPE_YEAR_RULES[fileType](today);
 }
 
 export class FileNotFoundError extends Error {
@@ -124,42 +29,135 @@ export class FileNotFoundError extends Error {
   }
 }
 
+interface FoundFile {
+  url: string;
+  linkText: string;
+  lastModified: Date | null;
+}
+
+const HEAD_TIMEOUT_MS = 10_000;
+
+async function resolveFileFromHorairesPage(fileType: FileType): Promise<FoundFile | null> {
+  const html = await fetchHorairesPage();
+  const allLinks = extractXlsxLinks(html, HORAIRES_PAGE_URL);
+
+  if (allLinks.length === 0) {
+    throw new Error(
+      `Aucun lien .xlsx trouvé sur la page des horaires (${HORAIRES_PAGE_URL}) : la structure de la page a peut-être changé.`
+    );
+  }
+
+  const year = computeFileYear(fileType);
+  const matchingLinks = findLinksForFileType(allLinks, fileType, year);
+
+  if (matchingLinks.length === 0) {
+    return null;
+  }
+
+  if (matchingLinks.length === 1) {
+    const [link] = matchingLinks;
+    if (link) {
+      console.log(`[fileFinder] Fichier retenu pour ${fileType} : "${link.fileName}" (${link.url})`);
+      return { url: link.url, linkText: link.text, lastModified: null };
+    }
+  }
+
+  let best: FoundFile | null = null;
+  let anyHeadFailed = false;
+
+  for (const link of matchingLinks) {
+    let response: Response;
+    try {
+      response = await fetch(link.url, {
+        method: "HEAD",
+        headers: { "User-Agent": USER_AGENT },
+        signal: AbortSignal.timeout(HEAD_TIMEOUT_MS),
+      });
+    } catch {
+      anyHeadFailed = true;
+      continue;
+    }
+
+    const lastModifiedHeader = response.headers.get("last-modified");
+    if (!response.ok || !lastModifiedHeader) {
+      anyHeadFailed = true;
+      continue;
+    }
+
+    const lastModified = new Date(lastModifiedHeader);
+    if (!best || !best.lastModified || lastModified > best.lastModified) {
+      best = { url: link.url, linkText: link.text, lastModified };
+    }
+  }
+
+  if (!best) {
+    throw new Error(
+      `${matchingLinks.length} liens correspondent à ${fileType} ${year}, mais aucune requête HEAD n'a permis de déterminer le plus récent.`
+    );
+  }
+
+  if (anyHeadFailed) {
+    console.warn(
+      `[fileFinder] Au moins une requête HEAD a échoué parmi ${matchingLinks.length} liens candidats pour ${fileType} ${year} ; retenu malgré tout : ${best.url}`
+    );
+  }
+
+  console.log(
+    `[fileFinder] Fichier retenu pour ${fileType} (le plus récent parmi ${matchingLinks.length} liens) : ${best.url}`
+  );
+  return best;
+}
+
 const CACHE_DURATION_MS = 6 * 60 * 60 * 1000;
 const NOT_FOUND_CACHE_DURATION_MS = 60 * 60 * 1000;
 
 type CacheEntry = {
-  result: { url: string; lastModified: Date } | null;
+  result: FoundFile | null;
+  resultYear: number | null;
   cachedAt: Date | null;
+  notFoundYear: number | null;
   notFoundCachedAt: Date | null;
 };
 
 const cache: Record<FileType, CacheEntry> = {
-  coursAutomne: { result: null, cachedAt: null, notFoundCachedAt: null },
-  coursPrintemps: { result: null, cachedAt: null, notFoundCachedAt: null },
-  examensAutomne: { result: null, cachedAt: null, notFoundCachedAt: null },
-  examensPrintemps: { result: null, cachedAt: null, notFoundCachedAt: null },
+  coursAutomne: { result: null, resultYear: null, cachedAt: null, notFoundYear: null, notFoundCachedAt: null },
+  coursPrintemps: { result: null, resultYear: null, cachedAt: null, notFoundYear: null, notFoundCachedAt: null },
+  examensAutomne: { result: null, resultYear: null, cachedAt: null, notFoundYear: null, notFoundCachedAt: null },
+  examensPrintemps: { result: null, resultYear: null, cachedAt: null, notFoundYear: null, notFoundCachedAt: null },
 };
 
 export async function getFileUrl(fileType: FileType): Promise<string> {
   const now = Date.now();
   const entry = cache[fileType];
+  const currentYear = computeFileYear(fileType);
 
-  if (entry.result && entry.cachedAt && now - entry.cachedAt.getTime() < CACHE_DURATION_MS) {
+  const hasFreshResult =
+    entry.result !== null &&
+    entry.resultYear === currentYear &&
+    entry.cachedAt !== null &&
+    now - entry.cachedAt.getTime() < CACHE_DURATION_MS;
+
+  if (hasFreshResult && entry.result) {
     return entry.result.url;
   }
 
-  if (entry.notFoundCachedAt && now - entry.notFoundCachedAt.getTime() < NOT_FOUND_CACHE_DURATION_MS) {
-    if (entry.result) {
+  const hasFreshNotFound =
+    entry.notFoundYear === currentYear &&
+    entry.notFoundCachedAt !== null &&
+    now - entry.notFoundCachedAt.getTime() < NOT_FOUND_CACHE_DURATION_MS;
+
+  if (hasFreshNotFound) {
+    if (entry.result && entry.resultYear === currentYear) {
       return entry.result.url;
     }
-    throw new FileNotFoundError(fileType, computeFileYear(fileType));
+    throw new FileNotFoundError(fileType, currentYear);
   }
 
-  let result: { url: string; lastModified: Date } | null;
+  let result: FoundFile | null;
   try {
-    result = await findMostRecentFileUrl(fileType);
+    result = await resolveFileFromHorairesPage(fileType);
   } catch (err) {
-    if (entry.result) {
+    if (entry.result && entry.resultYear === currentYear) {
       return entry.result.url;
     }
     throw err;
@@ -167,16 +165,19 @@ export async function getFileUrl(fileType: FileType): Promise<string> {
 
   if (result) {
     entry.result = result;
+    entry.resultYear = currentYear;
     entry.cachedAt = new Date();
+    entry.notFoundYear = null;
     entry.notFoundCachedAt = null;
     return result.url;
   }
 
+  entry.notFoundYear = currentYear;
   entry.notFoundCachedAt = new Date();
 
-  if (entry.result) {
+  if (entry.result && entry.resultYear === currentYear) {
     return entry.result.url;
   }
 
-  throw new FileNotFoundError(fileType, computeFileYear(fileType));
+  throw new FileNotFoundError(fileType, currentYear);
 }

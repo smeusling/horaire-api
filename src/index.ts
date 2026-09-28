@@ -3,7 +3,7 @@ import { downloadExcelFile, listSheetNames, getRawRows } from "./excelSource.js"
 import { excelSerialToDate } from "./dateUtils.js";
 import { parseCoursSheet } from "./courseParser.js";
 import { extractVolees, matchesVolee, matchesModalite, matchesOption, filterCourses } from "./voleeParser.js";
-import { generateFileUrls, findMostRecentFileUrl, getFileUrl, FileNotFoundError } from "./fileFinder.js";
+import { getFileUrl, FileNotFoundError } from "./fileFinder.js";
 import { SEMESTRES, semestreToFileType } from "./semestre.js";
 import type { Semestre } from "./semestre.js";
 import type { FastifyError, FastifyReply } from "fastify";
@@ -231,24 +231,6 @@ fastify.get<{
     }
   }
 );
-
-fastify.get("/debug/candidate-urls", async () => {
-  return generateFileUrls("coursAutomne", 30);
-});
-
-fastify.get("/debug/find-latest", async (request, reply) => {
-  try {
-    const result = await findMostRecentFileUrl("coursAutomne");
-    if (!result) {
-      reply.code(404);
-      return { error: "Aucun fichier trouvé parmi les URLs candidates." };
-    }
-    return result;
-  } catch (err) {
-    reply.code(500);
-    return { error: err instanceof Error ? err.message : String(err) };
-  }
-});
 
 const start = async () => {
   try {

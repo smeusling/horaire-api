@@ -1,7 +1,18 @@
 import * as XLSX from "xlsx";
+import { USER_AGENT } from "./horairesPage.js";
+
+const DOWNLOAD_TIMEOUT_MS = 10_000;
 
 export async function downloadExcelFile(url: string): Promise<ArrayBuffer> {
-  const response = await fetch(url);
+  const response = await fetch(url, {
+    headers: { "User-Agent": USER_AGENT },
+    signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+  });
+
+  if (response.status !== 200) {
+    throw new Error(`Impossible de télécharger le fichier (${url}) : statut HTTP ${response.status}.`);
+  }
+
   return response.arrayBuffer();
 }
 
