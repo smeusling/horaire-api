@@ -125,14 +125,19 @@ export class FileNotFoundError extends Error {
 }
 
 const CACHE_DURATION_MS = 6 * 60 * 60 * 1000;
+const NOT_FOUND_CACHE_DURATION_MS = 60 * 60 * 1000;
 
-type CacheEntry = { result: { url: string; lastModified: Date } | null; cachedAt: Date | null };
+type CacheEntry = {
+  result: { url: string; lastModified: Date } | null;
+  cachedAt: Date | null;
+  notFoundCachedAt: Date | null;
+};
 
 const cache: Record<FileType, CacheEntry> = {
-  coursAutomne: { result: null, cachedAt: null },
-  coursPrintemps: { result: null, cachedAt: null },
-  examensAutomne: { result: null, cachedAt: null },
-  examensPrintemps: { result: null, cachedAt: null },
+  coursAutomne: { result: null, cachedAt: null, notFoundCachedAt: null },
+  coursPrintemps: { result: null, cachedAt: null, notFoundCachedAt: null },
+  examensAutomne: { result: null, cachedAt: null, notFoundCachedAt: null },
+  examensPrintemps: { result: null, cachedAt: null, notFoundCachedAt: null },
 };
 
 export async function getFileUrl(fileType: FileType): Promise<string> {
@@ -141,6 +146,13 @@ export async function getFileUrl(fileType: FileType): Promise<string> {
 
   if (entry.result && entry.cachedAt && now - entry.cachedAt.getTime() < CACHE_DURATION_MS) {
     return entry.result.url;
+  }
+
+  if (entry.notFoundCachedAt && now - entry.notFoundCachedAt.getTime() < NOT_FOUND_CACHE_DURATION_MS) {
+    if (entry.result) {
+      return entry.result.url;
+    }
+    throw new FileNotFoundError(fileType, computeFileYear(fileType));
   }
 
   let result: { url: string; lastModified: Date } | null;
@@ -156,8 +168,11 @@ export async function getFileUrl(fileType: FileType): Promise<string> {
   if (result) {
     entry.result = result;
     entry.cachedAt = new Date();
+    entry.notFoundCachedAt = null;
     return result.url;
   }
+
+  entry.notFoundCachedAt = new Date();
 
   if (entry.result) {
     return entry.result.url;
