@@ -17,6 +17,12 @@ export function getRawRows(
 ): unknown[][] {
   const workbook = XLSX.read(buffer);
   const sheet = workbook.Sheets[sheetName];
+  if (!sheet) {
+    const availableSheets = workbook.SheetNames.map((name) => `"${name}"`).join(", ");
+    throw new Error(
+      `Feuille "${sheetName}" introuvable dans le fichier. Feuilles disponibles : ${availableSheets}.`
+    );
+  }
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as unknown[][];
   return rows.slice(0, maxRows);
 }
