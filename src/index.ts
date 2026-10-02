@@ -12,18 +12,35 @@ import type { FastifyError, FastifyReply } from "fastify";
 
 const fastify = Fastify();
 
+const isProduction = process.env.NODE_ENV === "production";
+
 fastify.addHook("onRequest", async (request, reply) => {
-  if (request.url.startsWith("/debug") && process.env.NODE_ENV === "production") {
+  if (request.url.startsWith("/debug") && isProduction) {
     reply.code(404).send({ error: "Not Found" });
   }
 });
+
+function send500Error(err: unknown, reply: FastifyReply): void {
+  console.error(err);
+  const message = err instanceof Error ? err.message : String(err);
+  reply.code(500).send({
+    error: isProduction ? "Erreur interne du serveur. Veuillez réessayer plus tard." : message,
+  });
+}
 
 fastify.setErrorHandler((err: FastifyError, request, reply) => {
   if (err.validation) {
     reply.code(400).send({ error: err.message });
     return;
   }
-  reply.code(err.statusCode ?? 500).send({ error: err.message });
+
+  const statusCode = err.statusCode ?? 500;
+  if (statusCode < 500) {
+    reply.code(statusCode).send({ error: err.message });
+    return;
+  }
+
+  send500Error(err, reply);
 });
 
 await fastify.register(swagger, {
@@ -223,7 +240,7 @@ function sendScheduleError(err: unknown, semestre: Semestre, reply: FastifyReply
     });
     return;
   }
-  reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
+  send500Error(err, reply);
 }
 
 fastify.get<{ Querystring: { semestre: Semestre } }>(
