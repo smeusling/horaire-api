@@ -12,10 +12,15 @@ export function buildColumnMap(headerRow: any[]): Record<string, number> {
   return columnMap;
 }
 
-export function formatHeure(value: number): string {
-  const totalMinutes = Math.round(value * 60);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
+export function formatHeure(value: number): string | null {
+  const totalValue = Math.round(value * 100);
+  const hours = Math.floor(totalValue / 100);
+  const minutes = totalValue % 100;
+
+  if (minutes >= 60) {
+    return null;
+  }
+
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${pad(hours)}:${pad(minutes)}`;
 }
@@ -74,11 +79,38 @@ export function parseCoursRow(row: any[], columnMap: Record<string, number>) {
   const heureDebutValue = getValue(row, columnMap, "heure début");
   const heureFinValue = getValue(row, columnMap, "heure fin");
 
+  const date = typeof dateSerial === "number" ? formatDateOnly(excelSerialToDate(dateSerial)) : undefined;
+  const cours = getTextValueByNames(row, columnMap, ["cours", "enseignement"]);
+
+  let heureDebut: string | undefined;
+  if (typeof heureDebutValue === "number") {
+    const formatted = formatHeure(heureDebutValue);
+    if (formatted === null) {
+      console.warn(
+        `[courseParser] heureDebut invalide : valeur brute ${heureDebutValue}, date ${date ?? "?"}, cours "${cours}".`
+      );
+    } else {
+      heureDebut = formatted;
+    }
+  }
+
+  let heureFin: string | undefined;
+  if (typeof heureFinValue === "number") {
+    const formatted = formatHeure(heureFinValue);
+    if (formatted === null) {
+      console.warn(
+        `[courseParser] heureFin invalide : valeur brute ${heureFinValue}, date ${date ?? "?"}, cours "${cours}".`
+      );
+    } else {
+      heureFin = formatted;
+    }
+  }
+
   return {
-    date: typeof dateSerial === "number" ? formatDateOnly(excelSerialToDate(dateSerial)) : undefined,
-    heureDebut: typeof heureDebutValue === "number" ? formatHeure(heureDebutValue) : undefined,
-    heureFin: typeof heureFinValue === "number" ? formatHeure(heureFinValue) : undefined,
-    cours: getTextValueByNames(row, columnMap, ["cours", "enseignement"]),
+    date,
+    heureDebut,
+    heureFin,
+    cours,
     contenuCours: getTextValue(row, columnMap, "contenu du cours"),
     volee: getTextValue(row, columnMap, "volée"),
     option: getTextValue(row, columnMap, "option"),
