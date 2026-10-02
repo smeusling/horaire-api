@@ -1,4 +1,6 @@
 import Fastify from "fastify";
+import swagger from "@fastify/swagger";
+import swaggerUi from "@fastify/swagger-ui";
 import { downloadExcelFile, listSheetNames, getRawRows } from "./excelSource.js";
 import { excelSerialToDate } from "./dateUtils.js";
 import { parseCoursSheet } from "./courseParser.js";
@@ -24,7 +26,29 @@ fastify.setErrorHandler((err: FastifyError, request, reply) => {
   reply.code(err.statusCode ?? 500).send({ error: err.message });
 });
 
-fastify.get("/health", async () => {
+await fastify.register(swagger, {
+  openapi: {
+    info: {
+      title: "API Horaires Cours",
+      description:
+        "API qui récupère et filtre les horaires de cours publiés par l'UNIL (sciences infirmières) par semestre, volée, modalité et option.",
+      version: "1.0.0",
+    },
+  },
+  transform: ({ schema, url }) => {
+    const transformedSchema = { ...schema };
+    if (url.startsWith("/debug")) {
+      transformedSchema.hide = true;
+    }
+    return { schema: transformedSchema, url };
+  },
+});
+
+await fastify.register(swaggerUi, {
+  routePrefix: "/documentation",
+});
+
+fastify.get("/health", { schema: { summary: "Vérifie que le serveur est démarré." } }, async () => {
   return { status: "ok" };
 });
 
@@ -156,11 +180,30 @@ fastify.get("/debug/match-test", async () => {
   };
 });
 
+const errorSchema = {
+  type: "object",
+  properties: { error: { type: "string" } },
+  required: ["error"],
+};
+
+const notFoundSchema = {
+  type: "object",
+  properties: {
+    error: { type: "string" },
+    message: { type: "string" },
+  },
+  required: ["error", "message"],
+};
+
 const voleesQuerystringSchema = {
   type: "object",
   required: ["semestre"],
   properties: {
-    semestre: { type: "string", enum: SEMESTRES },
+    semestre: {
+      type: "string",
+      enum: SEMESTRES,
+      description: "Semestre pour lequel récupérer les données ('automne' ou 'printemps'). Obligatoire.",
+    },
   },
 };
 
@@ -185,7 +228,18 @@ function sendScheduleError(err: unknown, semestre: Semestre, reply: FastifyReply
 
 fastify.get<{ Querystring: { semestre: Semestre } }>(
   "/api/volees",
-  { schema: { querystring: voleesQuerystringSchema } },
+  {
+    schema: {
+      summary: "Liste les volées disponibles pour un semestre donné.",
+      querystring: voleesQuerystringSchema,
+      response: {
+        200: { type: "array", items: { type: "string" } },
+        400: errorSchema,
+        404: notFoundSchema,
+        500: errorSchema,
+      },
+    },
+  },
   async (request, reply) => {
     const semestre = request.query.semestre;
     try {
@@ -201,10 +255,27 @@ const scheduleQuerystringSchema = {
   type: "object",
   required: ["volee", "modalite", "semestre"],
   properties: {
-    volee: { type: "string", minLength: 1 },
-    modalite: { type: "string", minLength: 1 },
-    option: { type: "string" },
-    semestre: { type: "string", enum: SEMESTRES },
+    volee: {
+      type: "string",
+      minLength: 1,
+      description: "Nom de la volée à filtrer, tel que retourné par /api/volees (ex: 'IPS 2026'). Obligatoire.",
+    },
+    modalite: {
+      type: "string",
+      minLength: 1,
+      description:
+        "Modalité(s) à inclure, séparées par une virgule : 'tempsPlein', 'partiel', ou les deux ('tempsPlein,partiel'). Obligatoire.",
+    },
+    option: {
+      type: "string",
+      description:
+        "Filtre optionnel sur l'orientation/l'option du cours (ex: 'Soins primaires'). Si absent, aucun filtre n'est appliqué sur ce champ.",
+    },
+    semestre: {
+      type: "string",
+      enum: SEMESTRES,
+      description: "Semestre pour lequel récupérer les données ('automne' ou 'printemps'). Obligatoire.",
+    },
   },
 };
 
@@ -217,7 +288,35 @@ fastify.get<{
   };
 }>(
   "/api/schedule",
-  { schema: { querystring: scheduleQuerystringSchema } },
+  {
+    schema: {
+      summary: "Renvoie les cours filtrés par semestre, volée, modalité et option.",
+      querystring: scheduleQuerystringSchema,
+      response: {
+        200: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              date: { type: "string", description: "Date du cours (YYYY-MM-DD)" },
+              heureDebut: { type: "string", description: "Heure de début (HH:MM)" },
+              heureFin: { type: "string", description: "Heure de fin (HH:MM)" },
+              cours: { type: "string" },
+              contenuCours: { type: "string" },
+              volee: { type: "string" },
+              option: { type: "string" },
+              enseignant: { type: "string" },
+              salle: { type: "string" },
+            },
+            required: ["cours", "contenuCours", "volee", "option", "enseignant", "salle"],
+          },
+        },
+        400: errorSchema,
+        404: notFoundSchema,
+        500: errorSchema,
+      },
+    },
+  },
   async (request, reply) => {
     const { volee, modalite, option, semestre } = request.query;
 
