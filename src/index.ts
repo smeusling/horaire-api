@@ -5,9 +5,10 @@ import { downloadExcelFile, listSheetNames, getRawRows } from "./excelSource.js"
 import { excelSerialToDate } from "./dateUtils.js";
 import { parseCoursSheet } from "./courseParser.js";
 import { extractVolees, matchesVolee, matchesModalite, matchesOption, filterCourses } from "./voleeParser.js";
-import { getFileUrl, FileNotFoundError } from "./fileFinder.js";
-import { SEMESTRES, semestreToFileType } from "./semestre.js";
+import { FileNotFoundError } from "./fileFinder.js";
+import { SEMESTRES } from "./semestre.js";
 import type { Semestre } from "./semestre.js";
+import { getCachedCourses } from "./coursesCache.js";
 import type { FastifyError, FastifyReply } from "fastify";
 
 const fastify = Fastify();
@@ -224,14 +225,6 @@ const voleesQuerystringSchema = {
   },
 };
 
-async function loadCourses(semestre: Semestre) {
-  const fileType = semestreToFileType(semestre);
-  const url = await getFileUrl(fileType);
-  const buffer = await downloadExcelFile(url);
-  const rows = getRawRows(buffer, "Horaire", Infinity);
-  return parseCoursSheet(rows);
-}
-
 function sendScheduleError(err: unknown, semestre: Semestre, reply: FastifyReply): void {
   if (err instanceof FileNotFoundError) {
     reply.code(404).send({
@@ -260,7 +253,7 @@ fastify.get<{ Querystring: { semestre: Semestre } }>(
   async (request, reply) => {
     const semestre = request.query.semestre;
     try {
-      const cours = await loadCourses(semestre);
+      const cours = await getCachedCourses(semestre);
       return extractVolees(cours);
     } catch (err) {
       sendScheduleError(err, semestre, reply);
@@ -338,7 +331,7 @@ fastify.get<{
     const { volee, modalite, option, semestre } = request.query;
 
     try {
-      const cours = await loadCourses(semestre);
+      const cours = await getCachedCourses(semestre);
       const selectedModalites = modalite.split(",").map((m) => m.trim());
       const result = filterCourses(cours, volee, selectedModalites, option);
       return result;
