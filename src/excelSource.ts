@@ -3,7 +3,7 @@ import { USER_AGENT } from "./horairesPage.js";
 
 const DOWNLOAD_TIMEOUT_MS = 10_000;
 
-export async function downloadExcelFile(url: string): Promise<ArrayBuffer> {
+async function fetchExcelFile(url: string): Promise<Response> {
   const response = await fetch(url, {
     headers: { "User-Agent": USER_AGENT },
     signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
@@ -13,7 +13,23 @@ export async function downloadExcelFile(url: string): Promise<ArrayBuffer> {
     throw new Error(`Impossible de télécharger le fichier (${url}) : statut HTTP ${response.status}.`);
   }
 
+  return response;
+}
+
+export async function downloadExcelFile(url: string): Promise<ArrayBuffer> {
+  const response = await fetchExcelFile(url);
   return response.arrayBuffer();
+}
+
+export async function downloadExcelFileWithLastModified(
+  url: string
+): Promise<{ buffer: ArrayBuffer; lastModified: Date | null }> {
+  const response = await fetchExcelFile(url);
+  const lastModifiedHeader = response.headers.get("last-modified");
+  const parsedDate = lastModifiedHeader ? new Date(lastModifiedHeader) : null;
+  const lastModified = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate : null;
+  const buffer = await response.arrayBuffer();
+  return { buffer, lastModified };
 }
 
 export function listSheetNames(buffer: ArrayBuffer): string[] {

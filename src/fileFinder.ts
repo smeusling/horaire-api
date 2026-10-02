@@ -126,7 +126,12 @@ const cache: Record<FileType, CacheEntry> = {
   examensPrintemps: { result: null, resultYear: null, cachedAt: null, notFoundYear: null, notFoundCachedAt: null },
 };
 
-export async function getFileUrl(fileType: FileType): Promise<string> {
+export interface ResolvedFile {
+  url: string;
+  linkText: string;
+}
+
+export async function getFileUrl(fileType: FileType): Promise<ResolvedFile> {
   const now = Date.now();
   const entry = cache[fileType];
   const currentYear = computeFileYear(fileType);
@@ -138,7 +143,7 @@ export async function getFileUrl(fileType: FileType): Promise<string> {
     now - entry.cachedAt.getTime() < CACHE_DURATION_MS;
 
   if (hasFreshResult && entry.result) {
-    return entry.result.url;
+    return { url: entry.result.url, linkText: entry.result.linkText };
   }
 
   const hasFreshNotFound =
@@ -148,7 +153,7 @@ export async function getFileUrl(fileType: FileType): Promise<string> {
 
   if (hasFreshNotFound) {
     if (entry.result && entry.resultYear === currentYear) {
-      return entry.result.url;
+      return { url: entry.result.url, linkText: entry.result.linkText };
     }
     throw new FileNotFoundError(fileType, currentYear);
   }
@@ -158,7 +163,7 @@ export async function getFileUrl(fileType: FileType): Promise<string> {
     result = await resolveFileFromHorairesPage(fileType);
   } catch (err) {
     if (entry.result && entry.resultYear === currentYear) {
-      return entry.result.url;
+      return { url: entry.result.url, linkText: entry.result.linkText };
     }
     throw err;
   }
@@ -169,14 +174,14 @@ export async function getFileUrl(fileType: FileType): Promise<string> {
     entry.cachedAt = new Date();
     entry.notFoundYear = null;
     entry.notFoundCachedAt = null;
-    return result.url;
+    return { url: result.url, linkText: result.linkText };
   }
 
   entry.notFoundYear = currentYear;
   entry.notFoundCachedAt = new Date();
 
   if (entry.result && entry.resultYear === currentYear) {
-    return entry.result.url;
+    return { url: entry.result.url, linkText: entry.result.linkText };
   }
 
   throw new FileNotFoundError(fileType, currentYear);

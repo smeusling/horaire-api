@@ -253,7 +253,7 @@ fastify.get<{ Querystring: { semestre: Semestre } }>(
   async (request, reply) => {
     const semestre = request.query.semestre;
     try {
-      const cours = await getCachedCourses(semestre);
+      const { cours } = await getCachedCourses(semestre);
       return extractVolees(cours);
     } catch (err) {
       sendScheduleError(err, semestre, reply);
@@ -304,22 +304,32 @@ fastify.get<{
       querystring: scheduleQuerystringSchema,
       response: {
         200: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              date: { type: "string", description: "Date du cours (YYYY-MM-DD)" },
-              heureDebut: { type: "string", description: "Heure de début (HH:MM)" },
-              heureFin: { type: "string", description: "Heure de fin (HH:MM)" },
-              cours: { type: "string" },
-              contenuCours: { type: "string" },
-              volee: { type: "string" },
-              option: { type: "string" },
-              enseignant: { type: "string" },
-              salle: { type: "string" },
+          type: "object",
+          properties: {
+            dateFichier: {
+              type: ["string", "null"],
+              description: "Date du fichier source publié par l'UNIL (YYYY-MM-DD), ou null si inconnue.",
             },
-            required: ["cours", "contenuCours", "volee", "option", "enseignant", "salle"],
+            cours: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  date: { type: "string", description: "Date du cours (YYYY-MM-DD)" },
+                  heureDebut: { type: "string", description: "Heure de début (HH:MM)" },
+                  heureFin: { type: "string", description: "Heure de fin (HH:MM)" },
+                  cours: { type: "string" },
+                  contenuCours: { type: "string" },
+                  volee: { type: "string" },
+                  option: { type: "string" },
+                  enseignant: { type: "string" },
+                  salle: { type: "string" },
+                },
+                required: ["cours", "contenuCours", "volee", "option", "enseignant", "salle"],
+              },
+            },
           },
+          required: ["dateFichier", "cours"],
         },
         400: errorSchema,
         404: notFoundSchema,
@@ -331,10 +341,10 @@ fastify.get<{
     const { volee, modalite, option, semestre } = request.query;
 
     try {
-      const cours = await getCachedCourses(semestre);
+      const { dateFichier, cours } = await getCachedCourses(semestre);
       const selectedModalites = modalite.split(",").map((m) => m.trim());
       const result = filterCourses(cours, volee, selectedModalites, option);
-      return result;
+      return { dateFichier, cours: result };
     } catch (err) {
       sendScheduleError(err, semestre, reply);
     }

@@ -1,4 +1,4 @@
-import { excelSerialToDate } from "./dateUtils.js";
+import { excelSerialToDate, formatDateOnly } from "./dateUtils.js";
 
 export function buildColumnMap(headerRow: any[]): Record<string, number> {
   const columnMap: Record<string, number> = {};
@@ -23,13 +23,6 @@ export function formatHeure(value: number): string | null {
 
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${pad(hours)}:${pad(minutes)}`;
-}
-
-function formatDateOnly(date: Date): string {
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(date.getUTCDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
 }
 
 function getValue(row: any[], columnMap: Record<string, number>, columnName: string): any {
