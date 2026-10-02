@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import cors from "@fastify/cors";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import { downloadExcelFile, listSheetNames, getRawRows } from "./excelSource.js";
@@ -10,6 +11,8 @@ import { SEMESTRES } from "./semestre.js";
 import type { Semestre } from "./semestre.js";
 import { getCachedCourses } from "./coursesCache.js";
 import type { FastifyError, FastifyReply } from "fastify";
+
+const ALLOWED_ORIGINS = ["https://smeusling.github.io", "http://localhost:5173"];
 
 const fastify = Fastify();
 
@@ -42,6 +45,11 @@ fastify.setErrorHandler((err: FastifyError, request, reply) => {
   }
 
   send500Error(err, reply);
+});
+
+await fastify.register(cors, {
+  origin: ALLOWED_ORIGINS,
+  methods: ["GET"],
 });
 
 await fastify.register(swagger, {
