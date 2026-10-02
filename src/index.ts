@@ -348,12 +348,15 @@ fastify.get<{
   }
 );
 
+const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
+const HOST = isProduction ? "0.0.0.0" : "127.0.0.1";
+
 const start = async () => {
   try {
-    await fastify.listen({ port: 3000 });
-    console.log("Serveur démarré sur http://localhost:3000");
+    await fastify.listen({ port: PORT, host: HOST });
+    console.log(`Serveur démarré sur le port ${PORT}`);
   } catch (err) {
-    fastify.log.error(err);
+    console.error(err);
     process.exit(1);
   }
 };
