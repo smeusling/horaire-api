@@ -5,7 +5,18 @@ import swaggerUi from "@fastify/swagger-ui";
 import { downloadExcelFile, listSheetNames, getRawRows } from "./excelSource.js";
 import { excelSerialToDate } from "./dateUtils.js";
 import { parseCoursSheet } from "./courseParser.js";
-import { extractVolees, matchesVolee, matchesModalite, matchesOption, filterCourses } from "./voleeParser.js";
+import {
+  buildVoleeCatalog,
+  voleeKey,
+  parseVoleeKey,
+  courseMatches,
+  MODALITES,
+  MODALITE_LABELS,
+  OPTIONS,
+  OPTION_LABELS,
+  type ModaliteId,
+  type OptionId,
+} from "./voleeCatalog.js";
 import { FileNotFoundError } from "./fileFinder.js";
 import { SEMESTRES } from "./semestre.js";
 import type { Semestre } from "./semestre.js";
@@ -146,66 +157,6 @@ fastify.get("/debug/mscips-raw", async (request, reply) => {
   }
 });
 
-fastify.get("/debug/volees", async (request, reply) => {
-  try {
-    const buffer = await downloadExcelFile(
-      "https://www.unil.ch/files/live/sites/fbm/files/06-espaces/sciences-infirmieres/20260918_horaire_automne_2026.xlsx"
-    );
-    const rows = getRawRows(buffer, "Horaire", Infinity);
-    const cours = parseCoursSheet(rows);
-    const volees = extractVolees(cours);
-    return volees;
-  } catch (err) {
-    reply.code(500);
-    return { error: err instanceof Error ? err.message : String(err) };
-  }
-});
-
-fastify.get("/debug/match-test", async () => {
-  const voleeCases: { rawVolee: string; selectedVolee: string }[] = [
-    { rawVolee: "MScSI Volée 2026 Tous / MScIPS 2026 Tous", selectedVolee: "IPS 2026" },
-    { rawVolee: "MScSI Volée 2026 Tous / MScIPS 2026 Tous", selectedVolee: "MScIPS 2026" },
-    { rawVolee: "Etudiants Tous MScSI/MScIPS", selectedVolee: "MScIPS 2026" },
-    { rawVolee: "Etudiants Tous MScSI/MScIPS", selectedVolee: "MScIPS" },
-    { rawVolee: "IPS 2026 Tous", selectedVolee: "IPS 2026" },
-    { rawVolee: "IPS 2025 Temps partiel 8 semestres", selectedVolee: "IPS 2025" },
-  ];
-
-  const modaliteCases: { rawVolee: string; selectedVolee: string; selectedModalites: string[] }[] = [
-    { rawVolee: "IPS 2025 Temps partiel 8 semestres", selectedVolee: "IPS 2025", selectedModalites: ["partiel"] },
-    { rawVolee: "IPS 2025 Temps partiel 8 semestres", selectedVolee: "IPS 2025", selectedModalites: ["tempsPlein"] },
-    { rawVolee: "IPS 2026 Tous", selectedVolee: "IPS 2026", selectedModalites: ["tempsPlein"] },
-    { rawVolee: "IPS 2026 Tous", selectedVolee: "IPS 2026", selectedModalites: ["partiel"] },
-  ];
-
-  const optionCases: { courseOption: string; selectedOption: string }[] = [
-    { courseOption: "Tous", selectedOption: "Soins primaires" },
-    { courseOption: "", selectedOption: "Soins primaires" },
-    { courseOption: "Soins primaires", selectedOption: "Soins primaires" },
-    { courseOption: "primaires/adultes", selectedOption: "Soins aux enfants" },
-    { courseOption: "primaires/adultes", selectedOption: "Soins primaires" },
-  ];
-
-  return {
-    matchesVolee: voleeCases.map(({ rawVolee, selectedVolee }) => ({
-      rawVolee,
-      selectedVolee,
-      result: matchesVolee(rawVolee, selectedVolee),
-    })),
-    matchesModalite: modaliteCases.map(({ rawVolee, selectedVolee, selectedModalites }) => ({
-      rawVolee,
-      selectedVolee,
-      selectedModalites,
-      result: matchesModalite(rawVolee, selectedVolee, selectedModalites),
-    })),
-    matchesOption: optionCases.map(({ courseOption, selectedOption }) => ({
-      courseOption,
-      selectedOption,
-      result: matchesOption(courseOption, selectedOption),
-    })),
-  };
-});
-
 const errorSchema = {
   type: "object",
   properties: { error: { type: "string" } },
@@ -248,10 +199,41 @@ fastify.get<{ Querystring: { semestre: Semestre } }>(
   "/api/volees",
   {
     schema: {
-      summary: "Liste les volées disponibles pour un semestre donné.",
+      summary: "Liste les volées disponibles pour un semestre donné, avec leurs modalités et options.",
       querystring: voleesQuerystringSchema,
       response: {
-        200: { type: "array", items: { type: "string" } },
+        200: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              volee: { type: "string", description: "Identifiant de la volée (ex: 'IPS 2025')." },
+              modalites: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    id: { type: "string", enum: MODALITES },
+                    label: { type: "string" },
+                  },
+                  required: ["id", "label"],
+                },
+              },
+              options: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    id: { type: "string", enum: OPTIONS },
+                    label: { type: "string" },
+                  },
+                  required: ["id", "label"],
+                },
+              },
+            },
+            required: ["volee", "modalites", "options"],
+          },
+        },
         400: errorSchema,
         404: notFoundSchema,
         500: errorSchema,
@@ -262,7 +244,12 @@ fastify.get<{ Querystring: { semestre: Semestre } }>(
     const semestre = request.query.semestre;
     try {
       const { cours } = await getCachedCourses(semestre);
-      return extractVolees(cours);
+      const catalogue = buildVoleeCatalog(cours);
+      return catalogue.map((info) => ({
+        volee: voleeKey(info.volee),
+        modalites: info.modalites.map((id) => ({ id, label: MODALITE_LABELS[id] })),
+        options: info.options.map((id) => ({ id, label: OPTION_LABELS[id] })),
+      }));
     } catch (err) {
       sendScheduleError(err, semestre, reply);
     }
@@ -271,23 +258,25 @@ fastify.get<{ Querystring: { semestre: Semestre } }>(
 
 const scheduleQuerystringSchema = {
   type: "object",
-  required: ["volee", "modalite", "semestre"],
+  required: ["volee", "semestre"],
   properties: {
     volee: {
       type: "string",
       minLength: 1,
-      description: "Nom de la volée à filtrer, tel que retourné par /api/volees (ex: 'IPS 2026'). Obligatoire.",
+      description:
+        "Identifiant de la volée à filtrer, au format renvoyé par /api/volees (ex: 'IPS 2025'). Obligatoire.",
     },
     modalite: {
       type: "string",
-      minLength: 1,
+      enum: MODALITES,
       description:
-        "Modalité(s) à inclure, séparées par une virgule : 'tempsPlein', 'partiel', ou les deux ('tempsPlein,partiel'). Obligatoire.",
+        "Identifiant de modalité à filtrer (facultatif), parmi ceux renvoyés par /api/volees pour cette volée.",
     },
     option: {
       type: "string",
+      enum: OPTIONS,
       description:
-        "Filtre optionnel sur l'orientation/l'option du cours (ex: 'Soins primaires'). Si absent, aucun filtre n'est appliqué sur ce champ.",
+        "Identifiant d'option à filtrer (facultatif), parmi ceux renvoyés par /api/volees pour cette volée.",
     },
     semestre: {
       type: "string",
@@ -300,8 +289,8 @@ const scheduleQuerystringSchema = {
 fastify.get<{
   Querystring: {
     volee: string;
-    modalite: string;
-    option?: string;
+    modalite?: ModaliteId;
+    option?: OptionId;
     semestre: Semestre;
   };
 }>(
@@ -350,9 +339,23 @@ fastify.get<{
 
     try {
       const { dateFichier, cours } = await getCachedCourses(semestre);
-      const selectedModalites = modalite.split(",").map((m) => m.trim());
-      const result = filterCourses(cours, volee, selectedModalites, option);
-      return { dateFichier, cours: result };
+      const targetVolee = parseVoleeKey(volee);
+
+      if (!targetVolee) {
+        return { dateFichier, cours: [] };
+      }
+
+      const filtered = cours.filter((c) => courseMatches(c, targetVolee, modalite, option));
+      const sorted = [...filtered].sort((a, b) => {
+        const dateA = a.date ?? "";
+        const dateB = b.date ?? "";
+        if (dateA !== dateB) return dateA.localeCompare(dateB);
+        const heureA = a.heureDebut ?? "";
+        const heureB = b.heureDebut ?? "";
+        return heureA.localeCompare(heureB);
+      });
+
+      return { dateFichier, cours: sorted };
     } catch (err) {
       sendScheduleError(err, semestre, reply);
     }
